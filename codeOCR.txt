@@ -469,4 +469,4 @@ namespace Emgu
     }
 }
 
-
+// Project => Right click => Properties => Build => Platform target => x64
