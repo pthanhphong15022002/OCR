@@ -1,0 +1,472 @@
+Emgu.CV
+Emgu.CV.Bitmap
+Emgu.CV.runtime.windows
+Tesseract
+
+=> Cài Tesseract = > vie.trainned
+
+
+Code:
+using Emgu.CV.CvEnum;
+using Emgu.CV.Structure;
+using Emgu.CV;
+using System;
+using Tesseract;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using Emgu.CV.Util;
+using System.Globalization;
+using System.Text;
+using Microsoft.VisualBasic.Devices;
+
+namespace Emgu
+{
+    public partial class Form1 : Form
+    {
+        string imagePath = "";
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        // Xử lý ảnh
+        Mat PreprocessImage(string path)
+        {
+            Mat src = CvInvoke.Imread(path, ImreadModes.Color);
+            CvInvoke.Resize(src, src, new Size(1000, src.Rows * 1000 / src.Cols)); // chuẩn hóa chiều rộng
+            Mat gray = new Mat();
+            CvInvoke.CvtColor(src, gray, ColorConversion.Bgr2Gray);
+            CvInvoke.Threshold(gray, gray, 120, 255, ThresholdType.Binary); // cải thiện độ tương phản cho OCR
+            return gray;
+        }
+
+        private void btnOCR_Click(object sender, EventArgs e)
+        {
+            txtID.Text = "";
+            txtName.Text = "";
+            txtDoB.Text = "";
+            txtSex.Text = "";
+            txtNationality.Text = "";
+            txtHome.Text = "";
+            txtAddress.Text = "";
+
+            if (string.IsNullOrEmpty(imagePath)) return;
+
+            var img = new Image<Bgr, byte>(imagePath);
+            double scale = 800.0 / img.Width;
+            int newHeight = (int)(img.Height * scale);
+            img = img.Resize(800, newHeight, Inter.Linear);
+
+            if (!File.Exists(imagePath))
+            {
+                MessageBox.Show("Ảnh không tồn tại");
+                return;
+            }
+
+            if (img.Width == 0 || img.Height == 0)
+            {
+                MessageBox.Show("Không thể load ảnh.");
+                return;
+            }
+            Mat preprocessedImage = PreprocessImage(imagePath);
+            //var gray = img.Convert<Gray, byte>().ThresholdBinary(new Gray(100), new Gray(255));
+            //var file = Path.Combine(Application.StartupPath, "tessdata"); // folder chứa vie.traineddata
+            string tessDataPath = @"D:\\OCR\\Source\\tessdata";
+
+            using (var engine = new TesseractEngine(tessDataPath, "vie", EngineMode.LstmOnly))
+            {
+                //engine.SetVariable("tessedit_char_whitelist", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸỳỵỷỹ ");
+                //using (var mat = gray.Mat)
+                using (var pix = PixConverter.ToPix(preprocessedImage.ToBitmap()))
+                //using (var pix = PixConverter.ToPix(mat.ToBitmap()))
+                {
+                    using (var page = engine.Process(pix))
+                    {
+                        string text = page.GetText();
+                        ExtractFields(text);
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(txtID.Text) ||
+                string.IsNullOrWhiteSpace(txtName.Text) ||
+                string.IsNullOrWhiteSpace(txtDoB.Text) ||
+                string.IsNullOrWhiteSpace(txtSex.Text) ||
+                string.IsNullOrWhiteSpace(txtNationality.Text) ||
+                string.IsNullOrWhiteSpace(txtHome.Text) ||
+                string.IsNullOrWhiteSpace(txtAddress.Text))
+            {
+                MessageBox.Show(
+                    "Ảnh không hợp lệ. Vui lòng chụp lại ảnh CCCD rõ nét, không mờ, không chói lóa.",
+                    "Lỗi nhận diện",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
+                return;
+            }
+
+        }
+
+        private void btnLoad_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog ofd = new OpenFileDialog();
+            if (ofd.ShowDialog() == DialogResult.OK)
+            {
+                imagePath = ofd.FileName;
+                pictureBox1.Image = Image.FromFile(imagePath);
+            }
+        }
+
+        public static class PixConverter
+        {
+            public static Pix ToPix(Bitmap bitmap)
+            {
+                using var stream = new MemoryStream();
+                bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Bmp);
+                stream.Position = 0;
+                return Pix.LoadFromMemory(stream.ToArray());
+            }
+        }
+
+        private string CleanLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return "";
+
+            // Normalize
+            line = line.Normalize(NormalizationForm.FormC);
+
+            // Loại bỏ ký tự đặc biệt không hợp lệ trong toàn bộ dòng
+            line = Regex.Replace(line, @"[^A-Za-zÀ-ỹà-ỹ0-9,\.\-/\s]", "");
+
+            // Xóa các ký tự rác đầu dòng
+            line = line.TrimStart('-', '.', ':', '`', '~', ' ');
+
+            // Xóa các ký tự rác cuối dòng: . , - : `
+            line = line.TrimEnd('.', ',', '-', ':', '`', '~', ' ');
+
+            return line.Trim();
+        }
+
+        public static Dictionary<string, string[]> FieldKeywords = new Dictionary<string, string[]>
+        {
+            { "Name", new[] { "họ và tên", "ho va ten", "full name", "ten" } },
+            { "DoB", new[] { "ngày sinh", "ngay sinh", "birth", "date of birth", "dob" } },
+            { "Gender", new[] { "giới tính", "gioi tinh", "sex", "gender", "Giớitinh" } },
+            { "Nationality", new[] { "quốc tịch", "quoc tich", "nationality" } },
+            { "Home", new[] { "quê quán", "que quan", "place of birth", "birth place" } },
+            { "Address", new[] { "nơi thường trú", "noi thuong tru", "address", "place of residence", "permanent address", "Nơi g trủ", "Place oÝ", "Nơi thưởng trú" } }
+        };
+
+        public static string Normalize(string input)
+        {
+            var normalized = input.ToLowerInvariant().Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder();
+
+            foreach (char c in normalized)
+            {
+                var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (unicodeCategory != UnicodeCategory.NonSpacingMark && (char.IsLetterOrDigit(c) || char.IsWhiteSpace(c)))
+                    sb.Append(c);
+            }
+
+            return sb.ToString().Normalize(NormalizationForm.FormC).Trim();
+        }
+
+        private void ExtractFields(string ocrText)
+        {
+            var lines = ocrText.Split('\n')
+                .Select(l => l.Trim())
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .ToList();
+
+            var results = new Dictionary<string, string>();
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string rawLine = lines[i];
+                string last = lines.Last();
+                string normalizedLine = Normalize(rawLine);
+
+                foreach (var field in FieldKeywords)
+                {
+                    if (results.ContainsKey(field.Key)) continue;
+
+                    foreach (var keyword in field.Value)
+                    {
+                        if (normalizedLine.Contains(Normalize(keyword)))
+                        {
+                            string value = "";
+
+                            // Trường hợp đặc biệt
+                            if (field.Key == "DoB")
+                            {
+                                var match = Regex.Match(rawLine, @"\d{2}/\d{2}/\d{4}");
+                                if (match.Success) value = match.Value;
+                            }
+                            else
+                            {
+                                int colonIndex = rawLine.IndexOf(":");
+                                if (field.Key == "Address")
+                                {
+                                    if (colonIndex >= 0 && colonIndex < rawLine.Length - 1)
+                                    {
+                                        value = CleanLine(rawLine.Substring(colonIndex));
+                                    }
+                                    else if (i < lines.Count)
+                                    {
+                                        value = CleanLine(lines[i]);
+                                    }
+                                }
+                                else if (field.Key == "Home")
+                                {
+                                    value = CleanLine(lines[i + 1]);
+                                }
+                                else
+                                {
+                                    // Thường lấy dòng sau nếu không có dữ liệu sau dấu :
+                                    if (colonIndex >= 0 && colonIndex < rawLine.Length - 1)
+                                    {
+                                        value = CleanLine(rawLine.Substring(colonIndex + 1));
+                                    }
+                                    else if (i + 1 < lines.Count)
+                                    {
+                                        value = CleanLine(lines[i + 1]);
+                                    }
+                                }
+                            }
+
+                            if (field.Key == "Address")
+                            {
+                                int keywordIndex = Normalize(rawLine).IndexOf(Normalize(keyword));
+                                if (keywordIndex >= 0)
+                                {
+                                    // Lấy phần sau từ khóa
+                                    string afterKeyword = rawLine.Substring(keywordIndex + keyword.Length).Trim(new[] { ':', '-', ' ', '!', '~' });
+
+                                    // Kiểm tra xem phần sau đó có chứa dấu phân cách như "Áp", "Thôn", "Phường", "Xã", "ấp"
+                                    var match = Regex.Match(afterKeyword, @"(Ấp|Thôn|Xã|Phường|Tổ|Khu phố|Số nhà)[^\n]*", RegexOptions.IgnoreCase);
+                                    if (match.Success)
+                                    {
+                                        value = CleanLine(match.Value);
+                                    }
+                                    else
+                                    {
+                                        value = CleanLine(afterKeyword);
+                                    }
+                                }
+
+                                // Ghép dòng cuối nếu cần (nhiều CCCD chia địa chỉ thành 2 dòng)
+                                var next = CleanLine(lines.Last());
+                                if (!string.IsNullOrWhiteSpace(next) && next.Length > 5 && !value.Contains(next))
+                                {
+                                    value = $"{value}, {next}";
+                                }
+                            }
+
+
+                            results[field.Key] = value;
+                            break;
+                        }
+                    }
+                }
+            }
+
+
+            // Nếu chưa bắt được ID từ từ khóa thì thử bắt theo pattern số 9-12 chữ số
+            foreach (var line in lines)
+            {
+                try
+                {
+                    var match = Regex.Match(line, @"\d{9,12}");
+                    if (match.Success)
+                    {
+                        txtID.Text = match.Value;
+                    }
+
+                    if (FieldKeywords["Gender"].Any(k => Normalize(line).Contains(Normalize(k))))
+                    {
+                        if (line.Contains("Nam")) txtSex.Text = "Nam";
+                        else txtSex.Text = "Nữ";
+                    }
+
+                    var nationalityMatch = Regex.Match(line, @"(Việt Nam|Vietnam)", RegexOptions.IgnoreCase);
+                    if (nationalityMatch.Success)
+                    {
+                        txtNationality.Text = nationalityMatch.Value;
+                    }
+                } catch (Exception ex) { }
+
+            }
+
+            // Hiển thị kết quả
+            txtName.Text = results.GetValueOrDefault("Name", "");
+            txtDoB.Text = results.GetValueOrDefault("DoB", "");
+            txtHome.Text = results.GetValueOrDefault("Home", "");
+            txtAddress.Text = results.GetValueOrDefault("Address", "");
+        }
+    }
+}
+
+
+
+UI:
+namespace Emgu
+{
+    partial class Form1
+    {
+        /// <summary>
+        ///  Required designer variable.
+        /// </summary>
+        private System.ComponentModel.IContainer components = null;
+
+        /// <summary>
+        ///  Clean up any resources being used.
+        /// </summary>
+        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        #region Windows Form Designer generated code
+
+        /// <summary>
+        ///  Required method for Designer support - do not modify
+        ///  the contents of this method with the code editor.
+        /// </summary>
+        private void InitializeComponent()
+        {
+            pictureBox1 = new PictureBox();
+            txtID = new TextBox();
+            btnOCR = new Button();
+            btnLoad = new Button();
+            txtName = new TextBox();
+            txtSex = new TextBox();
+            txtDoB = new TextBox();
+            txtNationality = new TextBox();
+            txtHome = new TextBox();
+            txtAddress = new TextBox();
+            ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
+            SuspendLayout();
+            // 
+            // pictureBox1
+            // 
+            pictureBox1.Location = new Point(12, 12);
+            pictureBox1.Name = "pictureBox1";
+            pictureBox1.Size = new Size(743, 484);
+            pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+            pictureBox1.TabIndex = 0;
+            pictureBox1.TabStop = false;
+            // 
+            // txtID
+            // 
+            txtID.Location = new Point(883, 12);
+            txtID.Name = "txtID";
+            txtID.Size = new Size(300, 23);
+            txtID.TabIndex = 1;
+            // 
+            // btnOCR
+            // 
+            btnOCR.Location = new Point(781, 234);
+            btnOCR.Name = "btnOCR";
+            btnOCR.Size = new Size(75, 23);
+            btnOCR.TabIndex = 2;
+            btnOCR.Text = "OCR";
+            btnOCR.UseVisualStyleBackColor = true;
+            btnOCR.Click += btnOCR_Click;
+            // 
+            // btnLoad
+            // 
+            btnLoad.Location = new Point(354, 518);
+            btnLoad.Name = "btnLoad";
+            btnLoad.Size = new Size(75, 23);
+            btnLoad.TabIndex = 3;
+            btnLoad.Text = "Load";
+            btnLoad.UseVisualStyleBackColor = true;
+            btnLoad.Click += btnLoad_Click;
+            // 
+            // txtName
+            // 
+            txtName.Location = new Point(883, 68);
+            txtName.Name = "txtName";
+            txtName.Size = new Size(300, 23);
+            txtName.TabIndex = 4;
+            // 
+            // txtSex
+            // 
+            txtSex.Location = new Point(883, 123);
+            txtSex.Name = "txtSex";
+            txtSex.Size = new Size(300, 23);
+            txtSex.TabIndex = 5;
+            // 
+            // txtDoB
+            // 
+            txtDoB.Location = new Point(883, 184);
+            txtDoB.Name = "txtDoB";
+            txtDoB.Size = new Size(300, 23);
+            txtDoB.TabIndex = 6;
+            // 
+            // txtNationality
+            // 
+            txtNationality.Location = new Point(883, 250);
+            txtNationality.Name = "txtNationality";
+            txtNationality.Size = new Size(300, 23);
+            txtNationality.TabIndex = 7;
+            // 
+            // txtHome
+            // 
+            txtHome.Location = new Point(883, 312);
+            txtHome.Multiline = true;
+            txtHome.Name = "txtHome";
+            txtHome.Size = new Size(300, 83);
+            txtHome.TabIndex = 8;
+            // 
+            // txtAddress
+            // 
+            txtAddress.Location = new Point(883, 419);
+            txtAddress.Multiline = true;
+            txtAddress.Name = "txtAddress";
+            txtAddress.Size = new Size(300, 77);
+            txtAddress.TabIndex = 9;
+            // 
+            // Form1
+            // 
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            ClientSize = new Size(1195, 606);
+            Controls.Add(txtAddress);
+            Controls.Add(txtHome);
+            Controls.Add(txtNationality);
+            Controls.Add(txtDoB);
+            Controls.Add(txtSex);
+            Controls.Add(txtName);
+            Controls.Add(btnLoad);
+            Controls.Add(btnOCR);
+            Controls.Add(txtID);
+            Controls.Add(pictureBox1);
+            Name = "Form1";
+            Text = "Form1";
+            ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
+            ResumeLayout(false);
+            PerformLayout();
+        }
+
+        #endregion
+
+        private PictureBox pictureBox1;
+        private TextBox txtID;
+        private Button btnOCR;
+        private Button btnLoad;
+        private TextBox txtName;
+        private TextBox txtSex;
+        private TextBox txtDoB;
+        private TextBox txtNationality;
+        private TextBox txtHome;
+        private TextBox txtAddress;
+    }
+}
+
+
