@@ -1,0 +1,25 @@
+Cài đặt Tesseract
+Mở cmd
+winget install ezwinports.make
+winget install wget
+
+Clone repo: https://github.com/tesseract-ocr/tesstrain
+Giải nén file ocrd-testset (có hoặc k cũng đc)
+Tạo 1 folder data => 1 folder (tên folder là tên ngôn ngữ sau khi train)
+=> Trong folder chứa mẫu (1 file ảnh .tif + 1 file text .gt.txt)
+
+Vào repo https://github.com/tesseract-ocr/tessdata_best 
+=> Download file deu_latf.traineddata
+
+Tạo 1 folder tên tessdata => Dán file train nền (vie.trainned)
+
+Tải Python
+
+Clone git clone https://github.com/tesseract-ocr/langdata_lstm.git
+cd langdata_lstm
+find . -maxdepth 1 -type d ! -name '.' ! -name 'vie' ! -name 'common' -exec rm -rf {} +
+wget https://raw.githubusercontent.com/tesseract-ocr/langdata_lstm/main/radical-stroke.txt
+
+make training MODEL_NAME=lv START_MODEL=vie TESSDATA=../tessdata/ LANGDATA=./langdata_lstm/ MAX_ITERATIONS=500 LEARNING_RATE=0.001
+
+

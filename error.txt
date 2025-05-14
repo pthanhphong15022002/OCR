@@ -1,0 +1,69 @@
+make training MODEL_NAME=lvpp START_MODEL=vie TESSDATA=../tessdata/ LANGDATA=./langdata_lstm/ MAX_ITERATIONS=500 LEARNING_RATE=0.001
+You are using make version: 4.4.1
+merge_unicharsets data/vie/lvpp.lstm-unicharset data/lvpp/my.unicharset "data/lvpp/unicharset"
+Loaded unicharset of size 270 from file data/vie/lvpp.lstm-unicharset
+Loaded unicharset of size 96 from file data/lvpp/my.unicharset
+Wrote unicharset file data/lvpp/unicharset.
+dos2unix "data/lvpp/lvpp.numbers"
+dos2unix: data/lvpp/lvpp.numbers: No such file or directory
+dos2unix: Skipping data/lvpp/lvpp.numbers, not a regular file.
+make: [Makefile:290: data/lvpp/lvpp.traineddata] Error 2 (ignored)
+dos2unix "data/lvpp/lvpp.punc"
+dos2unix: data/lvpp/lvpp.punc: No such file or directory
+dos2unix: Skipping data/lvpp/lvpp.punc, not a regular file.
+make: [Makefile:291: data/lvpp/lvpp.traineddata] Error 2 (ignored)
+dos2unix "data/lvpp/lvpp.wordlist"
+dos2unix: data/lvpp/lvpp.wordlist: No such file or directory
+dos2unix: Skipping data/lvpp/lvpp.wordlist, not a regular file.
+make: [Makefile:292: data/lvpp/lvpp.traineddata] Error 2 (ignored)
+dos2unix "data/langdata/lvpp/lvpp.config"
+dos2unix: data/langdata/lvpp/lvpp.config: No such file or directory
+dos2unix: Skipping data/langdata/lvpp/lvpp.config, not a regular file.
+make: [Makefile:293: data/lvpp/lvpp.traineddata] Error 2 (ignored)
+combine_lang_model \
+  --input_unicharset data/lvpp/unicharset \
+  --script_dir data/langdata \
+  --numbers data/lvpp/lvpp.numbers \
+  --puncs data/lvpp/lvpp.punc \
+  --words data/lvpp/lvpp.wordlist \
+  --output_dir data \
+   \
+  --lang lvpp
+Failed to read data from: data/lvpp/lvpp.wordlist
+Failed to read data from: data/lvpp/lvpp.punc
+Failed to read data from: data/lvpp/lvpp.numbers
+Loaded unicharset of size 270 from file data/lvpp/unicharset
+Setting unichar properties
+Setting script properties
+Warning: properties incomplete for index 62 = Γüä
+Warning: properties incomplete for index 84 = ~
+Warning: properties incomplete for index 111 = ╦å
+Config file is optional, continuing...
+Failed to read data from: data/langdata/lvpp/lvpp.config
+Null char=2
+Invalid format in radical table at line 0: 19886 3 23 6 3
+Creation of encoded unicharset failed!!
+Error writing recoder!!
+Created data/lvpp/lvpp.traineddata
+lstmtraining \
+  --debug_interval 0 \
+  --traineddata data/lvpp/lvpp.traineddata \
+  --old_traineddata ../tessdata//vie.traineddata \
+  --continue_from data/vie/lvpp.lstm \
+  --learning_rate 0.001 \
+  --model_output data/lvpp/checkpoints/lvpp \
+  --train_listfile data/lvpp/list.train \
+  --eval_listfile data/lvpp/list.eval \
+  --max_iterations 500 \
+  --target_error_rate 0.01 \
+2>&1 | tee -a data/lvpp/training.log
+Loaded file data/vie/lvpp.lstm, unpacking...
+Failed to continue from: data/vie/lvpp.lstm
+
+lstmtraining \
+--stop_training \
+--continue_from data/lvpp/checkpoints/lvpp_checkpoint \
+--traineddata data/lvpp/lvpp.traineddata \
+--model_output data/lvpp.traineddata
+Failed to read continue from: data/lvpp/checkpoints/lvpp_checkpoint
+make: *** [Makefile:325: data/lvpp.traineddata] Error 1
