@@ -1,0 +1,103 @@
+from ultralytics import YOLO
+import cv2
+import os
+import pytesseract
+from collections import defaultdict
+
+# --- CẤU HÌNH ---
+model_path = "D:/OCR/Dataset/testset/runs/detect/train/weights/best.pt"
+# img_path = "D:/OCR/Dataset/testset/images/img910.jpg" # img1058 img1292 img909 img1303 img1313 
+# img1269 img1276 img1290 img1314
+img_path = "D:/OCR/Dataset/testset/images/img910.jpg"
+output_img_path = "detected_result.jpg"
+crop_dir = "crops"
+max_display_height = 800
+pytesseract.pytesseract.tesseract_cmd = r"D:\OCR\Source\tesseract.exe"
+
+# --- DANH SÁCH CÁC TRƯỜNG ---
+class_names = ["id", "name", "dob", "gender", "nationality", "home", "address"]
+
+# --- LOAD MODEL & ẢNH ---
+model = YOLO(model_path)
+image = cv2.imread(img_path)
+image_for_crop = image.copy()
+
+# --- YOLO INFERENCE ---
+results = model(img_path)[0]
+
+# --- PHÂN LOẠI BOX THEO CLASS ---
+boxes_by_class = defaultdict(list)
+for box in results.boxes:
+    cls_id = int(box.cls.item())
+    conf = box.conf.item()
+    xyxy = box.xyxy[0].cpu().numpy().astype(int)
+
+    if cls_id in [5, 6]:  # HOME và ADDRESS: giữ nhiều box
+        boxes_by_class[cls_id].append({'box': xyxy, 'conf': conf})
+    else:
+        # Chỉ giữ 1 box tốt nhất
+        if cls_id not in boxes_by_class or conf > boxes_by_class[cls_id][0]['conf']:
+            boxes_by_class[cls_id] = [{'box': xyxy, 'conf': conf}]
+
+# --- TẠO FOLDER & CROP ---
+os.makedirs(crop_dir, exist_ok=True)
+for cls_id, box_list in boxes_by_class.items():
+    label = class_names[cls_id]
+    sorted_boxes = sorted(box_list, key=lambda b: b['box'][1])  # sort theo y1
+
+    for i, info in enumerate(sorted_boxes):
+        x1, y1, x2, y2 = info['box']
+        x1, y1 = max(0, x1), max(0, y1)
+        x2 = min(image.shape[1], x2)
+        y2 = min(image.shape[0], y2)
+
+        cropped = image_for_crop[y1:y2, x1:x2]
+        if cropped.size > 0:
+            crop_name = f"crop_{label}_{i}.jpg" if len(sorted_boxes) > 1 else f"crop_{label}.jpg"
+            crop_path = os.path.join(crop_dir, crop_name)
+            cv2.imwrite(crop_path, cropped)
+            print(f"[CROPPED] {crop_name}")
+        else:
+            print(f"[SKIPPED] Empty crop for {label}_{i}")
+
+# --- OCR MỖI FIELD ---
+print("\n=== 🧾 KẾT QUẢ OCR ===")
+for cls_id, box_list in boxes_by_class.items():
+    label = class_names[cls_id]
+    combined_text = ""
+
+    for i in range(len(box_list)):
+        crop_name = f"crop_{label}_{i}.jpg" if len(box_list) > 1 else f"crop_{label}.jpg"
+        crop_path = os.path.join(crop_dir, crop_name)
+
+        if os.path.exists(crop_path):
+            text = pytesseract.image_to_string(crop_path, lang="vie").strip()
+            combined_text += text + " "
+        else:
+            print(f"[MISSING] {crop_path} not found")
+
+    print(f"{label.upper()}: {combined_text.strip()}")
+
+# --- VẼ BOX TRÊN ẢNH ---
+for cls_id, box_list in boxes_by_class.items():
+    for info in box_list:
+        x1, y1, x2, y2 = info['box']
+        label = f"{class_names[cls_id]} ({info['conf']:.2f})"
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+# --- LƯU ẢNH KẾT QUẢ ---
+cv2.imwrite(output_img_path, image)
+print(f"\n[SAVED] {output_img_path}")
+
+# --- HIỂN THỊ THU NHỎ ---
+height, width = image.shape[:2]
+if height > max_display_height:
+    scale = max_display_height / height
+    image_disp = cv2.resize(image, (int(width * scale), max_display_height))
+else:
+    image_disp = image
+
+cv2.imshow("YOLOv8 Field Detection", image_disp)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
