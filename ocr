@@ -1,0 +1,27 @@
+import PIL.Image
+import google.generativeai as genai
+
+# Cấu hình API key
+genai.configure(api_key="")
+
+# Đường dẫn ảnh img1292 img1294
+img_path = "D:/OCR/Dataset/testset/images/img1285.jpg"
+
+try:
+    image = PIL.Image.open(img_path)
+except Exception as e:
+    print(f"❌ Không thể mở ảnh: {e}")
+    exit()
+
+model = genai.GenerativeModel("gemini-2.0-flash")
+
+# Gửi prompt và ảnh
+prompt = "Extract CCCD info in JSON (ID, name, DOB, gender, nationality, hometown, address)" 
+try:
+    response = model.generate_content([prompt, image])
+    print("✅ Kết quả trích xuất:\n")
+    print(response.text)
+except Exception as e:
+    print(f"❌ Lỗi khi gọi Gemini API: {e}")
+
+# pip install google-generativeai
