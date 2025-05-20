@@ -1,0 +1,81 @@
+-------------------------Train Tesseract-------------------------------------
+
+1. Cài Ubuntu => cmd (admin) => wsl --install  (ptphong Pw: Tp15022002)
+
+2. Cải đặt tesseract-ocr trong ubuntu
+Chạy sudo apt update && sudo apt install -y \
+  tesseract-ocr \
+  libleptonica-dev \
+  libicu-dev \
+  libpango1.0-dev \
+  libcairo2-dev \
+  libtiff-dev \
+  libjpeg-dev \
+  libpng-dev \
+  zlib1g-dev \
+  pkg-config \
+  git \
+  automake \
+  autoconf \
+  g++ \
+  make \
+  cmake \
+  wget
+
+3. Cài Java để dùng tool tạo box cho ảnh
+sudo apt install default-jre
+
+4. Tải tool từ: https://github.com/nguyenq/jTessBoxEditor/releases/tag/Release-2.6.0
+
+5. Dùng cd chuyển sang folder chứa jTessBoxEditor
+
+6. Chạy java -jar jTessBoxEditor.jar để mở tool
+
+7. Tạo file box => Tạo file lstm
+for tif in *.tif; do   base="${tif%.tif}";   echo "📄 Đang tạo: ${base}.lstmf";   tesseract "${base}.tif" "$base" --psm 6 lstm.train; done
+
+head -n 5 /mnt/d/OCR/FineTuning/tesstrain/data/lvpp.training_files.txt
+find /mnt/d/OCR/FineTuning/tesstrain/data/lvpp-ground-truth -name '*.lstmf' > /mnt/d/OCR/FineTuning/tesstrain/data/lvpp.training_files.txt
+head -n 3 /mnt/d/OCR/FineTuning/tesstrain/data/lvpp.training_files.txt
+
+8. Chạy training
+lstmtraining   --model_output /mnt/d/OCR/FineTuning/tesstrain/data/checkpoints   --continue_from /mnt/d/OCR/FineTuning/tesstrain/data/vie.lstm   --traineddata /mnt/d/OCR/FineTuning/tesstrain/data/vie.traineddata   --train_listfile /mnt/d/OCR/FineTuning/tesstrain/data/lvpp.training_files.txt   --max_iterations 8000   --learning_rate 0.0001   --net_mode 192
+
+9. Chạy xuất file traineddata
+lstmtraining   --stop_training   --continue_from /mnt/d/OCR/FineTuning/tesstrain/data/checkpoints_7.933_212_1200.checkpoint   --traineddata /mnt/d/OCR/FineTuning/tesstrain/data/vie.traineddata   --model_output /mnt/d/OCR/FineTuning/tesstrain/data/lvpp.traineddata
+
+
+-----------------------------Train YOLOv8--------------------------------
+1. pip install ultralytics
+2. Tạo 1 file là data.yaml như sau
+
+path: D:/OCR/Dataset/testset # Folder chứa ảnh và text
+train: images #folder chứa ảnh
+val: images  # hoặc val nếu có thư mục riêng
+
+nc: 7 # số field nhận diện
+names: [id, name, dob, gender, nationality, home, address] # Chi tiết field nhận diện
+
+3. Chạy lệnh dưới để train model
+yolo task=detect mode=train model=yolov8n.pt data=data.yaml epochs=100 imgsz=640 batch=16
+
+4. Chạy thử
+yolo predict model=runs/detect/train/weights/best.pt source="D:\OCR\Dataset\testset\images\img1310.jpg"
+
+--------------------------------------------------------------------------
+Dataset để train YOLO
+
+1. Chuẩn bị ảnh CCCD
+2. Tải phần mềm dùng đánh nhãn: LabelImg hoặc Label Studio
+3. Xuất file text chuẩn định dạng YOLO
+
+---------------------------Tích hợp YOLO vào C#------------------
+1. Cài đặt Microsoft.ML.OnnxRuntime
+2. Xuất file train (best.pt) sang format .onnx
++ Cài đặt python 3.10.11 (Version mới nhất chưa hỗ trợ xuất format .onnx)
++ Cài tool convert
+"D:\App\python.exe" -m pip install ultralytics onnx onnxruntime ####("D:\App\python.exe" nơi cài đặt python)
+
+
+
+
