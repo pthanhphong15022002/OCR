@@ -1,0 +1,397 @@
+using DocumentFormat.OpenXml.Presentation;
+using ERM.Common;
+using ERM.Common.Services.Hub.Models;
+using ERM.DAL;
+using ERM.Model;
+using ERM.Model.HR.temp;
+using Ical.Net.DataTypes;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ERM.Business.HR
+{
+    public class MultiProcess<TEntity> where TEntity : class
+    {
+        /// <summary>
+        /// Hàm thực thi nội dung trong mỗi process
+        /// </summary>
+        private modelMultiProcess _model;
+        private string _tokenCancel;
+        CancellationTokenSource cts;
+        public MultiProcess(modelMultiProcess model)
+        {
+            _model = model;
+            cts = new CancellationTokenSource();
+        }
+
+        private async Task Handler(List<TEntity> result, Func<List<TEntity>, Task> CallBack, int threadIndex)
+        {
+            int totalItems = result.Count;
+            int itemsPerProcess = _model.ItemPerProcess;
+            int totalChunks = (totalItems + itemsPerProcess - 1) / itemsPerProcess;
+            var ProcessName = _model.ProcessName;
+            if (!string.IsNullOrEmpty(_model.TypeCode))
+            {
+                ProcessName = ProcessName + _model.TypeCode;
+            }
+       
+            for (int chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++)
+            {
+                var data = result.Skip(chunkIndex * itemsPerProcess).Take(itemsPerProcess).ToList();
+                int chunkProgressBase = chunkIndex * itemsPerProcess;
+
+                if (_model.IsReturnList)
+                {
+                    if (cts.Token.IsCancellationRequested) {
+                        if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel))
+                        {
+                            HRHelper.lstCancelationMultiProcess.TryRemove(_tokenCancel, out _);
+                        }
+                        return; 
+                    }
+                    var progress = (chunkIndex + 1) * 100 / totalChunks;
+                    try
+                    {
+                        if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel) && HRHelper.lstCancelationMultiProcess[_tokenCancel])
+                        {
+                            cts.Cancel();
+                            var cancelMessage = new MessageModel()
+                            {
+                                UserID = _model.UserID,
+                                Tenant = _model.Tenant,
+                                Event = ProcessName,
+                                Data = new tempMultiProcessData
+                                {
+                                    ID = threadIndex,
+                                    Value = 100,
+                                    IsDone = true,
+                                    IsCancel = true,
+                                    TotalProcess = _model.TotalProcess,
+                                    DoneItems = totalItems,
+                                    TotalItems = totalItems,
+                                    Token = _model.SessionKey,
+                                    TokenCancel = _tokenCancel
+                                }
+                            };
+                            await _model.HubContext.Clients.All.ReceiveMessage(cancelMessage);
+                            if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel))
+                            {
+                                HRHelper.lstCancelationMultiProcess.TryRemove(_tokenCancel, out _);
+                            }
+                            return;
+                        }
+                        await CallBack(data);
+
+                        var mssg = new MessageModel()
+                        {
+                            UserID = _model.UserID,
+                            Tenant = _model.Tenant,
+                            Event = ProcessName,
+                            Data = new tempMultiProcessData
+                            {
+                                ID = threadIndex,
+                                Value = progress,
+                                IsDone = chunkIndex == totalChunks - 1,
+                                TotalProcess = _model.TotalProcess,
+                                DoneItems = progress * totalItems / 100,
+                                TotalItems = totalItems,
+                                Token = _model.SessionKey,
+                                TokenCancel = _tokenCancel
+                            }
+                        };
+                        await _model.HubContext.Clients.All.ReceiveMessage(mssg);
+                    }
+                    catch (Exception ex)
+                    {
+                        string msgError = ex.InnerException?.Message ?? ex.Message;
+                        var mssg = new MessageModel()
+                        {
+                            UserID = _model.UserID,
+                            Tenant = _model.Tenant,
+                            Event = ProcessName,
+                            Message = msgError,
+                            Data = new tempMultiProcessData
+                            {
+                                ID = threadIndex,
+                                Value = progress,
+                                IsDone = chunkIndex == totalChunks - 1,
+                                TotalProcess = _model.TotalProcess,
+                                DoneItems = progress * totalItems / 100,
+                                TotalItems = totalItems,
+                                Token = _model.SessionKey,
+                                TokenCancel = _tokenCancel
+                            }
+                        };
+                        await _model.HubContext.Clients.All.ReceiveMessage(mssg);
+                    }
+                }
+                else
+                {
+                    foreach (var item in data)
+                    {
+                        if (cts.Token.IsCancellationRequested)
+                        {
+                            if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel))
+                            {
+                                HRHelper.lstCancelationMultiProcess.TryRemove(_tokenCancel, out _);
+                            }
+                            return;
+                        }
+                        double progress = (chunkProgressBase + data.IndexOf(item) + 1) * 100 / totalItems;
+                        try
+                        {
+                            if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel) && HRHelper.lstCancelationMultiProcess[_tokenCancel])
+                            {
+                                cts.Cancel();
+                                var cancelMessage = new MessageModel()
+                                {
+                                    UserID = _model.UserID,
+                                    Tenant = _model.Tenant,
+                                    Event = ProcessName,
+                                    Data = new tempMultiProcessData
+                                    {
+                                        ID = threadIndex,
+                                        Value = 100,
+                                        IsDone = true,
+                                        IsCancel = true,
+                                        TotalProcess = _model.TotalProcess,
+                                        DoneItems = totalItems,
+                                        TotalItems = totalItems,
+                                        Token = _model.SessionKey,
+                                        TokenCancel = _tokenCancel
+                                    }
+                                };
+                                await _model.HubContext.Clients.All.ReceiveMessage(cancelMessage);
+                                if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel))
+                                {
+                                    HRHelper.lstCancelationMultiProcess.TryRemove(_tokenCancel, out _);
+                                }
+                                return;
+                            }
+                            var listItem = new List<TEntity> { item };
+                            await CallBack(listItem);
+                            var mssg = new MessageModel()
+                            {
+                                UserID = _model.UserID,
+                                Tenant = _model.Tenant,
+                                Event = ProcessName,
+                                Data = new tempMultiProcessData
+                                {
+                                    ID = threadIndex,
+                                    Value = progress,
+                                    IsDone = progress >= 100,
+                                    TotalProcess = _model.TotalProcess,
+                                    DoneItems = progress * totalItems / 100,
+                                    TotalItems = totalItems,
+                                    Token = _model.SessionKey,
+                                    TokenCancel = _tokenCancel
+                                }
+                            };
+                            await _model.HubContext.Clients.All.ReceiveMessage(mssg);
+                        }
+                        catch (Exception ex)
+                        {
+                            string msgError = ex.InnerException?.Message ?? ex.Message;
+                            var mssg = new MessageModel()
+                            {
+                                UserID = _model.UserID,
+                                Tenant = _model.Tenant,
+                                Event = ProcessName,
+                                Message = msgError,
+                                Data = new tempMultiProcessData
+                                {
+                                    ID = threadIndex,
+                                    Value = progress,
+                                    IsDone = true,
+                                    TotalProcess = _model.TotalProcess,
+                                    DoneItems = progress * totalItems / 100,
+                                    TotalItems = totalItems,
+                                    Token = _model.SessionKey,
+                                    TokenCancel = _tokenCancel
+                                }
+                            };
+                            await _model.HubContext.Clients.All.ReceiveMessage(mssg);
+                        }
+                    }
+                }
+            }
+
+            // Final completion message
+            var finalMessage = new MessageModel()
+            {
+                UserID = _model.UserID,
+                Tenant = _model.Tenant,
+                Event = ProcessName,
+                Data = new tempMultiProcessData
+                {
+                    ID = threadIndex,
+                    Value = 100,
+                    IsDone = true,
+                    TotalProcess = _model.TotalProcess,
+                    DoneItems = totalItems,
+                    TotalItems = totalItems,
+                    TokenCancel = _tokenCancel
+                }
+            };
+            await _model.HubContext.Clients.All.ReceiveMessage(finalMessage);
+            if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel))
+            {
+                HRHelper.lstCancelationMultiProcess.TryRemove(_tokenCancel, out _);
+            }
+        }
+       /// <summary>
+       /// Chạy process
+       /// </summary>
+       /// <returns></returns>
+       public async Task Excute(Func<List<TEntity>, Task> callBack = null, Expression<Func<TEntity, bool>> criteria = null)
+        {
+
+            var (numThread, itemPer) = await GetTotalProcess(_model.ProcessName,_model.TypeCode);
+            var user = UserStore.Get(LVRequestContext.Current.RequestSession.UserID, LVRequestContext.Current.RequestSession.SecurityKey);
+            CancellationTokenSource cts = new CancellationTokenSource();
+            _tokenCancel = Guid.NewGuid().ToString();
+            HRHelper.lstCancelationMultiProcess.TryAdd(_tokenCancel, false);
+            _model.User = user;
+            int threadLength = 0;
+            int temp = 0;
+            int count = 0;
+
+           
+
+            if (criteria != null)
+            {
+               count = await _model.Repository.CountAsync<TEntity>(criteria);
+            }
+            else
+            {
+                count = await _model.Repository.CountAsync<TEntity>();
+
+            }
+            if (count <= numThread)
+            {
+                numThread = count;
+            }
+            _model.TotalProcess = numThread;
+            _model.ItemPerProcess = itemPer;
+            threadLength = count / numThread;
+            temp = count - threadLength * numThread;
+            async Task Run(int threadIdx)
+            {
+                if (cts.Token.IsCancellationRequested)
+                {
+                    if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel))
+                    {
+                        HRHelper.lstCancelationMultiProcess.TryRemove(_tokenCancel, out _);
+                    }
+                    var cancelMessage = new MessageModel()
+                    {
+                        UserID = _model.UserID,
+                        Tenant = _model.Tenant,
+                        Event = _model.ProcessName,
+                        Data = new tempMultiProcessData
+                        {
+                            IsCancel = true,
+                            Token = _model.SessionKey,
+                            TokenCancel = _tokenCancel
+                        }
+                    };
+                    await _model.HubContext.Clients.All.ReceiveMessage(cancelMessage);
+                    return;
+                }
+                int pageNum = threadIdx - 1;
+                int pageSize = threadLength;
+                if (threadIdx == numThread)
+                {
+                    pageSize = threadLength + temp;
+                }
+                int skip = pageNum * threadLength;
+                var data = new List<TEntity>();
+                if (criteria != null)
+                {
+                    data = await _model.Repository.GetAsync<TEntity>(criteria).Skip(skip).Take(pageSize).ToListAsync();
+                }                
+                else           
+                {               
+                    data = await _model.Repository.GetAsync<TEntity>().Skip(skip).Take(pageSize).ToListAsync();
+                }
+                await Handler(data, callBack, threadIdx - 1);
+            };
+            _ = Task.Run(() =>
+            {
+                Parallel.For(1,numThread + 1, new ParallelOptions { CancellationToken = cts.Token }, async (i) =>
+                {
+                    await Run(i);
+                });
+            });
+        }
+
+        /// <summary>
+        /// Chạy process with Data param
+        /// </summary>
+        /// <returns></returns>
+        public async Task Excute(List<TEntity> result,Func<List<TEntity>,Task> callBack = null)
+        {
+            var user = UserStore.Get(LVRequestContext.Current.RequestSession.UserID, LVRequestContext.Current.RequestSession.SecurityKey);
+            _model.User = user;
+            _tokenCancel = Guid.NewGuid().ToString();
+            HRHelper.lstCancelationMultiProcess.TryAdd(_tokenCancel,false);
+            var (numThread,itemPer) = await GetTotalProcess(_model.ProcessName,_model.TypeCode);
+            int threadLength = 0;
+            int temp = 0;
+            int count = result.Count;
+            if (count <= numThread)
+            {
+                numThread = count;
+            }
+            _model.TotalProcess = numThread;
+            _model.ItemPerProcess = itemPer;
+            threadLength = count / numThread;
+            temp = count - threadLength * numThread;
+            async Task Run(int threadIdx)
+            {
+                if (cts.Token.IsCancellationRequested)
+                {
+                    if (HRHelper.lstCancelationMultiProcess.ContainsKey(_tokenCancel))
+                    {
+                        HRHelper.lstCancelationMultiProcess.TryRemove(_tokenCancel, out _);
+                    }
+                    return;
+                }
+                int pageNum = threadIdx - 1;
+                int pageSize = threadLength;
+                if (threadIdx == numThread)
+                {
+                    pageSize = threadLength + temp;
+                }
+                int skip = pageNum * threadLength;
+                var data = result.Skip(skip).Take(pageSize).ToList();
+                await Handler(data,callBack, threadIdx - 1);
+            };
+            _ = Task.Run(() =>
+            {
+                Parallel.For(1, numThread + 1, new ParallelOptions { CancellationToken = cts.Token }, async (i) =>
+                {
+                    await Run(i);
+                });
+            });
+        }
+
+
+        private async Task<(int,int)> GetTotalProcess(string FunctionID,string TypeCode = null)
+        {
+            var totalProcess = 4;
+            var numPer = 50;
+            var process = await _model.Repository.GetOneAsync<HR_SysProcessConfig>(
+                x => x.FunctionID == FunctionID 
+                && (string.IsNullOrEmpty(TypeCode) || x.TypeCode == TypeCode));
+
+            if (process == null) return (totalProcess, numPer);
+            return (process.TotalProcess, process.TotalEmployeePerProcess);
+        }
+    }
+
+}
