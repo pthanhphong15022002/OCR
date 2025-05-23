@@ -1,0 +1,189 @@
+import { ApplicationRef, Injectable, ViewContainerRef} from '@angular/core';
+import { ApiHttpService, AuthStore, NotificationsService, RealHub, RealHubService, ResponseModel, UserModel } from 'codx-core';
+import { EMPTY, Observable, Subscription } from 'rxjs';
+import { LoadingMultiProcessComponent } from '../components/loading-multi-process/loading-multi-process.component';
+import { NgxUiLoaderService } from 'ngx-ui-loader';
+import { catchError, finalize, throwError } from 'rxjs';
+@Injectable({
+  providedIn: 'root',
+})
+export class CodxHrMultiProcessService {
+  user:UserModel
+  constructor(private realHub: RealHubService,
+    private applicationRef: ApplicationRef,
+    private _auth: AuthStore,
+    private notify:NotificationsService,
+    private api:ApiHttpService,
+    private ngxService: NgxUiLoaderService
+  ) {
+    this.user = this._auth.get();
+  }
+  processObj:Array<any> = [];
+  processing:boolean;
+  detectorRef:any
+  subcriptions = new Subscription();
+  listKeys:Map<string,Function> = new Map();
+  tokenCancel:string;
+  multiUI: LoadingMultiProcessComponent;
+  listError:Array<any> = [];
+  SessionKey:any;
+  isLoading = false;
+  RemoveProcess(idx:number,key){
+    if(idx > -1 && idx < this.processObj.length)
+    {
+      let isFinish = this.processObj.every(x => x.isDone);
+      if(isFinish)
+      {
+        if(this.listKeys.has(key) && this.listKeys.get(key)){
+          this.listKeys.get(key)();
+        }
+        if(this.listError.length == 0){
+          this.processing = false;
+          this.processObj = []
+          this.listError = []
+          //this.multiUI = undefined;
+        }
+      }
+      this.detectorRef.detectChanges();
+    }
+  }
+
+  private AddProcess(numThread){
+    if(this.processObj.length == 0){
+      this.processObj = Array(numThread).fill(null).map((_, index) => {
+        let obj = {
+          id : index,
+          value : 0,
+          iteration: 0,
+          totalIteration: 0,
+        };
+        return obj;
+      });
+    }
+    
+  }
+  private CreateUI(){
+    if(this.multiUI == undefined){
+      const rootViewContainerRef = this.applicationRef.components[0].injector.get(ViewContainerRef);
+      const componentRef = rootViewContainerRef.createComponent(LoadingMultiProcessComponent);
+      this.multiUI = componentRef.instance;
+    }
+  }
+
+
+  initMulti(key:string,fnFinish,typeCode?){
+    this.CreateUI();
+    var ProcessName = key
+    if(typeCode){
+      ProcessName = ProcessName + typeCode
+    }
+    if(this.listKeys.size == 0){
+      this.subcriptions = new Subscription();
+      this.listKeys.set(ProcessName,fnFinish)
+      this.realHub.start("hr")
+      .then((x: RealHub) => {
+        if(x){
+          this.subcriptions.add(x.$subjectReal.asObservable().subscribe((z) => {
+            var nameReturn = z.event
+            if(typeCode){
+              nameReturn = nameReturn
+            }
+            if(!this.SessionKey || !z.data['token']){
+              return;
+            }
+            if(z && [...this.listKeys.keys()].includes(nameReturn) && z.userID == this.user.userID && z.data['token'] == this.SessionKey) 
+            {
+              if(z.data["isCancel"]){
+                setTimeout(() => {
+                  this.processObj = []
+                  this.listError = []
+                  //this.multiUI = undefined;
+                  this.isLoading = false;
+                  this.ngxService.stop();
+                  this.processing = false;
+                  this.detectorRef.detectChanges();
+                },1000);
+                return;
+              }
+              this.isLoading = false;
+              this.ngxService.stop();
+              let totalProcess = z.data["totalProcess"];
+              this.AddProcess(totalProcess)
+              if(this.processObj.length > 0){
+                this.processing = true;
+                let message = z.message;
+                let threadID = z.data["id"];
+                let value =  z.data["value"];
+                let isDone = z.data["isDone"];
+                let totalItems = z.data["totalItems"];
+                let doneItems = z.data["doneItems"];
+                this.tokenCancel = z.data["tokenCancel"];
+                const idx = this.processObj.findIndex(x => x.id == threadID)
+                if(idx != -1 && this.processObj[idx])
+                {
+                  this.processObj[idx].id = threadID;
+                  this.processObj[idx].value = value.toFixed(2);
+                  this.processObj[idx].isDone = isDone;
+                  this.processObj[idx].totalItems = totalItems;
+                  this.processObj[idx].doneItems = doneItems;
+                  this.detectorRef.detectChanges();
+                  if(message){
+                    this.listError.push({
+                      message:message,
+                      threadID:threadID
+                    });
+                  }
+                  if(isDone)
+                  {
+                    setTimeout(() => {
+                      this.RemoveProcess(idx,z.event);
+                    },300);
+                  }
+                }
+              }
+            }
+          }));
+          }
+        });
+    }else{
+      this.listKeys.set(ProcessName,fnFinish)
+    }
+  }
+
+
+  destroyMultiProcess(){
+    this.listKeys.clear();
+    this.subcriptions.unsubscribe();
+  }
+
+  
+  newGuid(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+      /[xy]/g,
+      function (c) {
+        var r = (Math.random() * 16) | 0,
+          v = c == 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      }
+    );
+  }
+
+
+  CallMultiProcess(service: string, assemply: string, className: string, methodName: string, data?: any): Observable<ResponseModel>{
+    this.SessionKey = this.newGuid();
+    this.ngxService.start();
+    this.isLoading = true;
+    return this.api.execSv<any>(service,assemply,className,methodName,[
+      ...data,
+      this.SessionKey
+    ]).pipe(
+
+  catchError((error) => {
+    this.isLoading = false;
+    this.ngxService.stop();
+    this.notify.notifyCode('208')
+    return EMPTY;
+  })
+    );
+  }
+}

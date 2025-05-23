@@ -1,0 +1,89 @@
+<ng-container *ngIf="multiProcess.processing">
+  <div class="container-loading-multi-process">
+    <div class="processing-multi p-4">
+      <div class="d-flex justify-content-between">
+        <div class="align-items-center d-flex gap-4 p-3">
+          <div class="fw-bold fs-5 pb-0">Danh sách tiến trình đang chạy</div>
+          <div
+            *ngIf="multiProcess.listError.length > 0"
+            class="align-items-center d-flex gap-1"
+            style="cursor: pointer"
+            (click)="showError = true"
+          >
+            <span class="icon-error icon-18 text-danger"></span>
+            <span>{{ multiProcess.listError.length }}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="btn btn-icon btn-light"
+          (click)="stopAll()"
+        >
+          <span class="icon-close icon-18 text-danger"></span>
+        </button>
+      </div>
+      <ng-container *ngFor="let item of multiProcess.processObj; index as idx">
+        <div class="animate__bounceInRight animate__delay-2s">
+          <div
+            class="align-items-end d-flex flex-column gap-4 processing-item px-4 py-2"
+          >
+            <div class="d-flex justity-content-end"></div>
+            <div class="w-100">
+              <div class="fw-bold mb-1 me-2 text-end">
+                {{ item?.doneItems ?? 0 }}/{{ item?.totalItems ?? 0 }}
+              </div>
+              <ngb-progressbar
+                style="min-height: 25px"
+                class="w-100 mb-3"
+                type="primary"
+                [value]="item.value"
+              >
+                <i class="text-white">{{ item.value }}%</i>
+              </ngb-progressbar>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+    </div>
+  </div>
+  <ng-container *ngIf="multiProcess?.listError?.length > 0 && showError">
+    <div class="container-loading-multi-process">
+      <div
+        class="processing-multi"
+        style="
+          width: 814px;
+          min-height: 500px;
+          margin-top: 10px;
+          margin-bottom: 10px;
+        "
+      >
+        <div class="d-flex justify-content-between">
+          <div>
+            <div class="fw-bold fs-18 p-3 pb-0">Danh sách lỗi</div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-icon btn-light"
+            (click)="showError = false"
+          >
+            <span class="icon-close icon-18 text-danger"></span>
+          </button>
+        </div>
+        <div style="overflow-y: auto; max-height: calc(100vh - 100px)">
+          <ng-container
+            *ngFor="let item of multiProcess.listError; index as idx"
+          >
+            <div class="p-4 text-danger border-bottom">
+              <span class="fw-bold text-black">{{ item?.threadID }}</span> -
+              {{ item?.message }}
+            </div>
+          </ng-container>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+</ng-container>
+
+<ng-container *ngIf="multiProcess.isLoading">
+  <div class="container-loading-multi-process"></div>
+</ng-container>

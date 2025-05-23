@@ -1,0 +1,22 @@
+.processing-multi{
+    top: 50%;
+    left: 50%;
+    background: #fff;
+    position: fixed !important;
+    transform: translate(-50%, -50%);
+    z-index: 10000;
+    width: 500px;
+    border-radius: 10px;
+}
+.container-loading-multi-process{
+    height:100vh;
+    width: 100vw;
+    background:#0000003d;
+    position:fixed;
+    top:0;
+    z-index:10000;
+}
+
+::ng-deep .progress-bar {
+    background: linear-gradient(99.78deg, #2C69D1 -5.85%, #0ABCF9 109.55%) !important;
+}

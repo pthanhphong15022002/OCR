@@ -1,0 +1,43 @@
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+import { CodxHrMultiProcessService } from '../../services/codx-hr-multiprocess.service';
+import { CommonModule } from '@angular/common';
+import { ApiHttpService } from 'codx-core';
+
+@Component({
+  selector: 'loading-multi-process',
+  templateUrl: './loading-multi-process.component.html',
+  styleUrls: ['./loading-multi-process.component.scss'],
+  imports:[NgbModule,CommonModule],
+  standalone: true,
+})
+export class LoadingMultiProcessComponent implements OnInit {
+  showError:boolean = false;
+  constructor(
+    protected multiProcess:CodxHrMultiProcessService,
+    private api:ApiHttpService,
+    private detectorRef:ChangeDetectorRef){}
+  ngOnInit(): void {
+    this.multiProcess.detectorRef = this.detectorRef
+  }
+  stopAll(){
+    this.api.callSv('HR','HR','EmployeesBusiness','CancelMultiProcessAsync',[this.multiProcess.tokenCancel]).subscribe(x => {
+      // this.multiProcess.listError = [];
+      // this.multiProcess.processObj = []
+      // this.multiProcess.multiUI = undefined;
+      // this.multiProcess.processing = false;
+      let isFinish = this.multiProcess.processObj.every(x => x.isDone);
+      if(isFinish)
+      {
+     
+      this.multiProcess.listError = [];
+      this.multiProcess.processObj = []
+      this.multiProcess.multiUI = undefined;
+      this.multiProcess.isLoading = false;
+      this.multiProcess.processing = false;
+         
+        
+      }
+    })
+  }
+}
